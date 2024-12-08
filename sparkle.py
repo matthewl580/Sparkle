@@ -430,6 +430,7 @@ class Lexer:
 	
 
 	def make_identifier(self, bypass = None):
+
 		pos_start = self.pos.copy()
 		if bypass == "RUN FUNC BYPASS":
 			return Token(TT_IDENTIFIER, "RUN", pos_start, self.pos)
@@ -455,6 +456,7 @@ class Lexer:
 		if id_str not in KEYWORDS:
 			return Token(TT_IDENTIFIER, id_str, pos_start, self.pos)
 		else:
+			#print(f'making keyword: ({id_str})')
 			return Token(TT_KEYWORD, id_str, pos_start, self.pos)
 
 
@@ -693,6 +695,7 @@ class Parser:
 	def advance(self):
 		self.tok_idx += 1
 		self.update_current_tok()
+		print("---> advancing: "+ str(self.current_tok))
 		return self.current_tok
 
 	def reverse(self, amount=1):
@@ -709,8 +712,14 @@ class Parser:
 
 	def parse(self):
 		res = self.statements()
-
+		
+		print("error? "+str(self.current_tok.type))
+		if self.current_tok.type == TT_KEYWORD:
+			self.call()
+		if not res.error: return res
 		if not res.error and self.current_tok.type not in (TT_EOF, TT_KEYWORD, TT_IDENTIFIER,TT_EQ,TT_RBRACE):
+			self.reverse()
+			print("trying to parse" + str(self.current_tok))
 			return res.failure(InvalidSyntaxError(
 				self.current_tok.pos_start, self.current_tok.pos_end,
 				"Expected '+', '-', '*', '/', ,'[', '^', '==', '!=', '<', '>', <=', '>=', 'AND' or 'OR'"
@@ -790,7 +799,7 @@ class Parser:
 
 
 	def if_expr(self):
-		print("aaa")
+		print("if_expr")
 		res = ParseResult()
 		all_cases = res.register(self.if_expr_cases('IF'))
 		if res.error: return res
@@ -803,65 +812,61 @@ class Parser:
 		while self.current_tok.type == TT_NEWLINE:
 					res.register_advancement()
 					self.advance()
-		if self.current_tok.matches(TT_KEYWORD, 'ELSE'):
+		print("running if_expr_c")
+		if not self.current_tok.matches(TT_KEYWORD, 'ELSE'):
+			return res.failure(InvalidSyntaxError(
+				self.current_tok.pos_start, self.current_tok.pos_end,
+				"Expected 'ELSE' got: " + f"{self.current_tok}"
+			))
+		res.register_advancement()
+		self.advance()
+
+		while self.current_tok.type == TT_NEWLINE:
 			res.register_advancement()
 			self.advance()
 
-			while self.current_tok.type == TT_NEWLINE:
-				res.register_advancement()
-				self.advance()
-			if self.current_tok.type == TT_LBRACE: 
-					res.register_advancement()
-					self.advance()
-			if self.current_tok.type == TT_NEWLINE:
-				while self.current_tok.type == TT_NEWLINE:
-					res.register_advancement()
-					self.advance()
-				res.register_advancement()
-				self.advance()
-				print("hello?")
-				statements = res.register(self.statements())
-				if res.error: return res
-				else_case = (statements, True)
-				while self.current_tok.type == TT_NEWLINE:
-					res.register_advancement()
-					self.advance()
-				print(f'if_expr_C current tok {self.current_tok}')
-				if self.current_tok.type ==  TT_RBRACE:
-					res.register_advancement()
-					self.advance()
-				else:
-					return res.failure(InvalidSyntaxError(
-						self.current_tok.pos_start, self.current_tok.pos_end,
-						"Expected '}'"
-					))
-			else:
-				while self.current_tok.type == TT_NEWLINE:
-					res.register_advancement()
-					self.advance()
-				res.register_advancement()
-				self.advance()
-				while self.current_tok.type == TT_NEWLINE:
-					res.register_advancement()
-					self.advance()
-				print(f"cc {self.current_tok}")
-				expr = res.register(self.statements())
-				if res.error: 
-					return res
-				else_case = (expr, False)
-				res.register_advancement()
-				self.advance()
-				print(f"ffdd: {self.current_tok}")
-				if self.current_tok.type in ( TT_RBRACE): 
-					res.register_advancement()
-					self.advance()
-			return res.success(else_case)
+		if not self.current_tok.type == TT_LBRACE:
+			return res.failure(InvalidSyntaxError(
+				self.current_tok.pos_start, self.current_tok.pos_end,
+				"Expected '{' got: " + f"{self.current_tok}"
+			))
+		res.register_advancement()
+		self.advance()
+		
+		while self.current_tok.type == TT_NEWLINE:
+			res.register_advancement()
+			self.advance()
+
+		expr = res.register(self.statements())
+		if res.error: 
+			return res
+		else_case = (expr, False)
+		res.register_advancement()
+		self.advance()
+
+		while self.current_tok.type == TT_NEWLINE:
+			res.register_advancement()
+			self.advance()
+
+		if not self.current_tok.type == TT_RBRACE:
+			return res.failure(InvalidSyntaxError(
+				self.current_tok.pos_start, self.current_tok.pos_end,
+				"Expected '}' got: " + f"{self.current_tok}"
+			))
+		res.register_advancement()
+		self.advance()
+		while self.current_tok.type == TT_NEWLINE:
+			res.register_advancement()
+			self.advance()
+		self.advance()
+		return res.success(else_case)
 
 	
 
 	def if_expr_b_or_c(self):
 		res = ParseResult()
 		cases, else_case = [], None
+		print("runnign if_expr_b or c")
 		while self.current_tok.type == TT_NEWLINE:
 					res.register_advancement()
 					self.advance()
@@ -872,7 +877,6 @@ class Parser:
 	
 
 	def if_expr_cases(self, case_keyword):
-		print(f' {case_keyword} found!')
 		res = ParseResult()
 		cases = []
 		else_case = None
@@ -883,10 +887,13 @@ class Parser:
 			))
 		res.register_advancement()
 		self.advance()
-		if self.current_tok.type == TT_LPAREN:
-			res.register_advancement()
-			self.advance()
-		print(f"expecting condition got: {self.current_tok}")
+		if not self.current_tok.type  == TT_LPAREN: #NOTE: in(TT_LBRACE , TT_RPAREN)
+			return res.failure(InvalidSyntaxError(
+				self.current_tok.pos_start, self.current_tok.pos_end,
+				"Expected '(' got " + f"{self.current_tok}"
+			))
+		res.register_advancement()
+		self.advance()
 		condition = res.register(self.statement())
 		if res.error: return res
 		while self.current_tok.type == TT_NEWLINE:
@@ -896,53 +903,43 @@ class Parser:
 		if not self.current_tok.type  == TT_RPAREN: #NOTE: in(TT_LBRACE , TT_RPAREN)
 			return res.failure(InvalidSyntaxError(
 				self.current_tok.pos_start, self.current_tok.pos_end,
-				"Expected '}' got " + f"{self.current_tok}"
+				"Expected ')' got " + f"{self.current_tok}"
 			))
 		res.register_advancement()
 		self.advance()
-		print(f"kjiokj: {self.current_tok}")
-		if self.current_tok.type == TT_LBRACE:
+		if not self.current_tok.type  == TT_LBRACE: #NOTE: in(TT_LBRACE , TT_RPAREN)
+			return res.failure(InvalidSyntaxError(
+				self.current_tok.pos_start, self.current_tok.pos_end,
+				"Expected '{' got " + f"{self.current_tok}"
+			))
+		res.register_advancement()
+		self.advance()
+		
+		while self.current_tok.type == TT_NEWLINE:
 			res.register_advancement()
 			self.advance()
-		if self.current_tok.type == TT_NEWLINE:
-			while self.current_tok.type == TT_NEWLINE:
-				res.register_advancement()
-				self.advance()
 
-			statements = res.register(self.statements())
-			if res.error: return res
-			cases.append((condition, statements, True))
-			while self.current_tok.type == TT_NEWLINE:
-				res.register_advancement()
-				self.advance()
-			if self.current_tok.type == TT_RBRACE:
-				res.register_advancement()
-				self.advance()
-				all_cases = res.register(self.if_expr_b_or_c())
-				if res.error: return res
-				new_cases, else_case = all_cases
-				cases.extend(new_cases)
-			else:
-				all_cases = res.register(self.if_expr_b_or_c())
-				if res.error: return res
-				while self.current_tok.type == TT_NEWLINE:
-					res.register_advancement()
-					self.advance()
-				if self.current_tok.type == TT_RBRACE:
-					res.register_advancement()
-					self.advance()
-				new_cases, else_case = all_cases
-				cases.extend(new_cases)
-		else:
-			expr = res.register(self.statements())
-			if res.error: return res
-			cases.append((condition, expr, True))
-
-			all_cases = res.register(self.if_expr_b_or_c())
-			if res.error: return res
-			new_cases, else_case = all_cases
-			cases.extend(new_cases)
-
+		statements = res.register(self.statements())
+		if res.error: return res
+		cases.append((condition, statements, True))
+		while self.current_tok.type == TT_NEWLINE:
+			res.register_advancement()
+			self.advance()
+		print(f"this should be TT_RBRACE: {self.current_tok}")
+		if self.current_tok.type == TT_RBRACE:
+			res.register_advancement()
+			self.advance()
+		print("callig if expr b or c")
+		all_cases = res.register(self.if_expr_b_or_c())
+		if res.error: return res
+		while self.current_tok.type == TT_NEWLINE:
+			res.register_advancement()
+			self.advance()
+		if self.current_tok.type == TT_RBRACE:
+			res.register_advancement()
+			self.advance()
+		new_cases, else_case = all_cases
+		cases.extend(new_cases)
 		return res.success((cases, else_case))
 	def for_expr(self):
 		res = ParseResult()
@@ -959,7 +956,7 @@ class Parser:
 		if self.current_tok.type != TT_IDENTIFIER:
 			return res.failure(InvalidSyntaxError(
 				self.current_tok.pos_start, self.current_tok.pos_end,
-				f"Expected identifier 122"
+				f"Expected identifier"
 			))
 
 		var_name = self.current_tok
@@ -1067,10 +1064,11 @@ class Parser:
 	###################################
 	def call(self):
 		res = ParseResult()
-
-		print(f"wgthrw3esgthj: {self.current_tok}")
+		print(f'call? {self.current_tok}')
 		if self.current_tok.type == TT_RBRACE:
-			return res.success(Number.null)
+			self.advance()
+		while self.current_tok == TT_NEWLINE:
+			self.advance()
 		atom = res.register(self.atom())
 		if res.error: return res
 		if self.current_tok.type == TT_LPAREN:
@@ -1110,6 +1108,15 @@ class Parser:
 	def atom(self):
 		res = ParseResult()
 		tok = self.current_tok
+		print(f"- atom current tok: {self.current_tok}")
+		while self.current_tok.type == TT_NEWLINE:
+			self.advance()
+		print("newtok? " + str(self.current_tok))
+		if str(self.current_tok) ==  "KEYWORD:IF": # Bypass traditional checks
+			if_expr = res.register(self.if_expr())
+			if res.error: return res
+			return res.success(if_expr)
+		print("is if statement? " + str(tok.matches(TT_KEYWORD, 'IF')))
 		if tok.type in (TT_INT, TT_FLOAT):
 			res.register_advancement()
 			self.advance()
@@ -1121,10 +1128,10 @@ class Parser:
 			return res.success(StringNode(tok))
 		
 		elif tok.matches(TT_KEYWORD, 'IF'):
-					print("found if (parser)")
-					if_expr = res.register(self.if_expr())
-					if res.error: return res
-					return res.success(if_expr)
+			print("parser found if")
+			if_expr = res.register(self.if_expr())
+			if res.error: return res
+			return res.success(if_expr)
 		
 		elif tok.matches(TT_KEYWORD, 'REPEAT'):
 			for_expr = res.register(self.for_expr())
@@ -2216,7 +2223,7 @@ class Interpreter:
 			return res.success(number.set_pos(node.pos_start, node.pos_end))
 		
 	def visit_IfNode(self, node, context):
-		print("visitng if")
+		print("visiting if")
 		res = RTResult()
 		for condition, expr, should_return_null in node.cases:
 			condition_value = res.register(self.visit(condition, context))
